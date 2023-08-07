@@ -1,5 +1,6 @@
 mod term;
 mod config;
+mod ytdlp;
 
 fn main(){
 

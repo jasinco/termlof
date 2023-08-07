@@ -1,29 +1,45 @@
-use std::error;
+use std::{error, io, process::{self, Command}, thread, sync::mpsc};
 use terminal::Action;
 use tui::{
     backend::CrosstermBackend,
     layout,
     style::{Color, Modifier, Style},
-    widgets::{Block, Borders, List, ListItem, ListState},
+    widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Wrap},
     Terminal,
 };
-use crate::config;
-
+use crate::{config, ytdlp};
 pub fn start_term() -> Result<(), Box<dyn error::Error>> {
     
     //use terminal instead of crossterm, and using same api, so do not worried
     let stdout = terminal::stdout();
     stdout.act(Action::EnableRawMode)?;
     stdout.act(Action::EnterAlternateScreen)?;
+    terminalui(terminal::stdout())?;
+    stdout.act(Action::LeaveAlternateScreen)?;
+    stdout.act(Action::DisableRawMode)?;
+    stdout.act(Action::ShowCursor)?;
+
+    Ok(())
+}
+
+
+enum Playstat{
+    Url(String),
+    Pause
+}
+
+fn terminalui(stdout:terminal::Terminal<io::Stdout>) -> Result<(), Box<dyn error::Error>> {
     let backend = CrosstermBackend::new(terminal::stdout());
     let mut term = Terminal::new(backend)?;
     
     //Read termlof.toml
     let termconf = config::parse_default().unwrap();
-    let selection:Vec<String> = termconf.lofilist().into_iter().chain(termconf.musiclist().into_iter()).collect();
+    let mut selection:Vec<&str> = termconf.lofilist().into_iter().chain(termconf.musiclist().into_iter()).collect();
     //create ListState which let list can select things
-    let mut lofi_liststate = ListState::default();
-    lofi_liststate.select(Some(0));
+    let mut liststate = ListState::default();
+    liststate.select(Some(0));
+    let tx = ffplay();
+    let mut status = String::new();
 
     //Start TUI
     loop { 
@@ -31,7 +47,7 @@ pub fn start_term() -> Result<(), Box<dyn error::Error>> {
             let size = f.size();
             let chunks = layout::Layout::default()
                 .direction(layout::Direction::Horizontal)
-                .margin(2)
+                .margin(1)
                 .constraints(
                     [
                         layout::Constraint::Percentage(50),
@@ -49,8 +65,18 @@ pub fn start_term() -> Result<(), Box<dyn error::Error>> {
                 .style(Style::default().fg(Color::White))
                 .highlight_style(Style::default().add_modifier(Modifier::ITALIC))
                 .highlight_symbol(">>");
-            f.render_stateful_widget(listf, chunks[0], &mut lofi_liststate);
+
+            let pg = Paragraph::new(status.as_ref())
+                .block(Block::default()
+                .title("Hints")
+                .borders(Borders::ALL))
+                .style(Style::default().fg(Color::Gray))
+                .alignment(layout::Alignment::Center)
+                .wrap(Wrap{trim:true});
+            f.render_widget(pg, chunks[1]);
+            f.render_stateful_widget(listf, chunks[0], &mut liststate);
         })?;
+
         //terminal based keyboard function
         if let terminal::Retrieved::Event(Some(terminal::Event::Key(event))) = stdout
             .get(terminal::Value::Event(None))
@@ -58,17 +84,32 @@ pub fn start_term() -> Result<(), Box<dyn error::Error>> {
         {
             match event.code {
                 terminal::KeyCode::Char('q') => {
-                    stdout.act(Action::LeaveAlternateScreen)?;
+                    tx.send(Playstat::Pause)?;
+                    drop(tx);
+
                     break;
                 },
+                terminal::KeyCode::Char('r')=>{
+                    selection = termconf.lofilist().into_iter().chain(termconf.musiclist().into_iter()).collect();
+                },
                 terminal::KeyCode::Down=>{
-                    if lofi_liststate.selected().unwrap() < selection.len()-1{
-                        lofi_liststate.select(Some(lofi_liststate.selected().unwrap()+1));
+                    if liststate.selected().unwrap() < selection.len()-1{
+                        liststate.select(Some(liststate.selected().unwrap()+1));
                     }
                 },
                 terminal::KeyCode::Up=>{
-                    if lofi_liststate.selected().unwrap()>0{
-                        lofi_liststate.select(Some(lofi_liststate.selected().unwrap()-1));
+                    if liststate.selected().unwrap()>0{
+                        liststate.select(Some(liststate.selected().unwrap()-1));
+                    }
+                },
+                terminal::KeyCode::Enter=>{
+                    tx.send(Playstat::Pause)?;
+                    let url = termconf.get_val(selection[liststate.selected().unwrap()]);
+                    if url.len() != 0{
+                        tx.send(Playstat::Url(ytdlp::get_audio_url(&url)?))?;
+                        status = format!("Playing {}", selection[liststate.selected().unwrap()]);
+                    }else{
+                        status = "Missing url".to_string();
                     }
                 },
                 _ => {
@@ -77,8 +118,23 @@ pub fn start_term() -> Result<(), Box<dyn error::Error>> {
             }
         }
     }
-    stdout.act(Action::DisableRawMode)?;
-    stdout.act(Action::ShowCursor)?;
-
     Ok(())
+}
+
+fn ffplay() -> mpsc::Sender<Playstat>{
+    let (tx, rx) = mpsc::channel::<Playstat>();
+    thread::spawn(move || {
+        while let Ok(playstat) = rx.recv() {
+            if let Playstat::Url(url) = playstat {    
+                let mut f = Command::new("ffplay").args([url.as_str(), "-nodisp"]).stdout(process::Stdio::null()).stdin(process::Stdio::null()).stderr(process::Stdio::null()).spawn().unwrap();
+                while let Playstat::Pause = rx.recv().unwrap(){
+                    f.kill().unwrap();
+                    break;
+                }
+            }
+           
+        }
+    });
+
+    return tx;
 }

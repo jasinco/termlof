@@ -1,7 +1,6 @@
 use toml::Table;
-use std::{io::Read,fs};
+use std::{io::{Read, self},fs};
 use serde::Deserialize;
-
 
 #[derive(Deserialize)]
 pub struct Config{
@@ -10,15 +9,24 @@ pub struct Config{
 }
 
 impl Config{
-    pub fn lofilist(&self) -> Vec<String>{
-        return self.lofi.keys().into_iter().map(|f|{f.into()}).collect::<Vec<String>>();
+    pub fn lofilist(&self) -> Vec<&str>{
+        return self.lofi.keys().into_iter().map(|f|{f.as_str()}).collect::<Vec<&str>>();
     }
-    pub fn musiclist(&self) -> Vec<String>{
-        return self.music.keys().into_iter().map(|f|{f.into()}).collect::<Vec<String>>();
+    pub fn musiclist(&self) -> Vec<&str>{
+        return self.music.keys().into_iter().map(|f|{f.as_str()}).collect::<Vec<&str>>();
+    }
+    pub fn get_val(&self, key:&str) -> String{
+        if let Some(st) = self.lofi.get(key){
+            return st.as_str().unwrap().to_string()
+        }else if let Some(stm) = self.music.get(key){
+            return stm.as_str().unwrap().to_string()
+        }else{
+            return "".to_string();
+        }
     }
 }
 
-pub fn parse_default() -> std::io::Result<Config> {
+pub fn parse_default() -> io::Result<Config> {
     let mut file = fs::File::open("./termlof.toml")?;
     let mut content = String::new();
     file.read_to_string(&mut content)?;
