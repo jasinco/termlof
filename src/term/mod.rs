@@ -18,7 +18,6 @@ pub fn start_term() -> Result<(), Box<dyn error::Error>> {
     stdout.act(Action::LeaveAlternateScreen)?;
     stdout.act(Action::DisableRawMode)?;
     stdout.act(Action::ShowCursor)?;
-
     Ok(())
 }
 
@@ -33,7 +32,7 @@ fn terminalui(stdout:terminal::Terminal<io::Stdout>) -> Result<(), Box<dyn error
     let mut term = Terminal::new(backend)?;
     
     //Read termlof.toml
-    let termconf = config::parse_default().unwrap();
+    let mut termconf = config::parse_default().unwrap();
     let mut selection:Vec<&str> = termconf.lofilist().into_iter().chain(termconf.musiclist().into_iter()).collect();
     //create ListState which let list can select things
     let mut liststate = ListState::default();
@@ -90,6 +89,8 @@ fn terminalui(stdout:terminal::Terminal<io::Stdout>) -> Result<(), Box<dyn error
                     break;
                 },
                 terminal::KeyCode::Char('r')=>{
+                    status = "Reload list".to_string();
+                    termconf = config::parse_default().unwrap();
                     selection = termconf.lofilist().into_iter().chain(termconf.musiclist().into_iter()).collect();
                 },
                 terminal::KeyCode::Down=>{
@@ -103,11 +104,15 @@ fn terminalui(stdout:terminal::Terminal<io::Stdout>) -> Result<(), Box<dyn error
                     }
                 },
                 terminal::KeyCode::Enter=>{
-                    tx.send(Playstat::Pause)?;
                     let url = termconf.get_val(selection[liststate.selected().unwrap()]);
                     if url.len() != 0{
-                        tx.send(Playstat::Url(ytdlp::get_audio_url(&url)?))?;
-                        status = format!("Playing {}", selection[liststate.selected().unwrap()]);
+                        if let Some(yturl) = ytdlp::get_audio_url(&url).ok(){
+                            tx.send(Playstat::Pause)?;
+                            tx.send(Playstat::Url(yturl))?;
+                            status = format!("Playing {}", selection[liststate.selected().unwrap()]);
+                        }else{
+                            status = "ERROR url".to_string();
+                        }
                     }else{
                         status = "Missing url".to_string();
                     }
