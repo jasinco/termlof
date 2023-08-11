@@ -1,5 +1,6 @@
 use toml::Table;
-use std::{io::{Read, self},fs};
+use std::{io::{Read, self},fs, path};
+use dirs;
 use serde::Deserialize;
 
 #[derive(Deserialize)]
@@ -27,9 +28,13 @@ impl Config{
 }
 
 pub fn parse_default() -> io::Result<Config> {
-    let mut file = fs::File::open("./termlof.toml")?;
-    let mut content = String::new();
-    file.read_to_string(&mut content)?;
-    let parsed:Config = toml::from_str(&content).unwrap();
-    Ok(parsed)
+    let config = dirs::config_dir().unwrap().join("termlof.toml");
+    if let Ok(mut file) = fs::File::open(config){
+        let mut content = String::new();
+        file.read_to_string(&mut content)?;
+        let parsed:Config = toml::from_str(&content).unwrap();
+        Ok(parsed)
+    }else{
+        Err(io::Error::new(io::ErrorKind::NotFound, "Didn't found termlof.toml"))
+    }
 }

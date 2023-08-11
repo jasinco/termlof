@@ -32,7 +32,8 @@ fn terminalui(stdout:terminal::Terminal<io::Stdout>) -> Result<(), Box<dyn error
     let mut term = Terminal::new(backend)?;
     
     //Read termlof.toml
-    let mut termconf = config::parse_default().unwrap();
+
+    let mut termconf = config::parse_default()?;
     let mut selection:Vec<&str> = termconf.lofilist().into_iter().chain(termconf.musiclist().into_iter()).collect();
     //create ListState which let list can select things
     let mut liststate = ListState::default();
