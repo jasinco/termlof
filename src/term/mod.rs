@@ -91,7 +91,7 @@ fn terminalui(stdout:terminal::Terminal<io::Stdout>) -> Result<(), Box<dyn error
                 },
                 terminal::KeyCode::Char('r')=>{
                     status = "Reload list".to_string();
-                    termconf = config::parse_default().unwrap();
+                    termconf = config::parse_default()?;
                     selection = termconf.lofilist().into_iter().chain(termconf.musiclist().into_iter()).collect();
                 },
                 terminal::KeyCode::Down=>{
