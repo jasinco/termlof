@@ -1,5 +1,5 @@
 use toml::Table;
-use std::{io::{Read, self},fs, path};
+use std::{io::{Read, self},fs};
 use dirs;
 use serde::Deserialize;
 
